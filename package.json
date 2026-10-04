@@ -1,0 +1,25 @@
+{
+  "name": "lynx-native-raf-repro",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": "^22.18.0 || ^24.0.0 || ^26.0.0"
+  },
+  "scripts": {
+    "build": "rspeedy build && node scripts/build-native.mjs",
+    "start": "lynxtron .",
+    "test": "node scripts/verify.mjs",
+    "test:control": "node scripts/verify.mjs --control",
+    "repro": "node scripts/verify.mjs --verify-repro"
+  },
+  "devDependencies": {
+    "@lynx-js/lynxtron": "0.0.28",
+    "@lynx-js/lynx-library-headers": "0.0.28",
+    "@lynx-js/react": "0.126.2",
+    "@lynx-js/react-rsbuild-plugin": "0.20.3",
+    "@lynx-js/rspeedy": "0.18.0"
+  }
+}

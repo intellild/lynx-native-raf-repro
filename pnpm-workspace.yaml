@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - "@lynx-js/lynxtron"
+  - "@swc/core"
+  - "esbuild"
