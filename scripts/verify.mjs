@@ -12,22 +12,28 @@ const cli = path.join(
 );
 const verifyRepro = process.argv.includes("--verify-repro");
 const controlOnly = process.argv.includes("--control");
+const executable = process.env.LYNXTRON_EXECUTABLE || null;
 const artifacts = path.join(root, ".tmp");
 await mkdir(artifacts, { recursive: true });
+console.log(`RAF_RUNTIME ${executable || "npm-runtime"}`);
 let failed = false;
 
 async function run(windowless, pump) {
   const name = `${windowless ? "windowless" : "windowed"}-${pump ? "control" : "native"}`;
-  const child = spawn(process.execPath, [cli, root], {
-    cwd: root,
-    detached: true,
-    env: {
-      ...process.env,
-      RAF_WINDOWLESS: String(Number(windowless)),
-      RAF_PUMP_NS_RUN_LOOP: String(Number(pump)),
+  const child = spawn(
+    executable || process.execPath,
+    executable ? [root] : [cli, root],
+    {
+      cwd: root,
+      detached: true,
+      env: {
+        ...process.env,
+        RAF_WINDOWLESS: String(Number(windowless)),
+        RAF_PUMP_NS_RUN_LOOP: String(Number(pump)),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   let log = "";
   for (const stream of [child.stdout, child.stderr])
     stream.on("data", (chunk) => {

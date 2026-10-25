@@ -13,11 +13,12 @@
     "start": "lynxtron .",
     "test": "node scripts/verify.mjs",
     "test:control": "node scripts/verify.mjs --control",
-    "repro": "node scripts/verify.mjs --verify-repro"
+    "repro": "node scripts/verify.mjs --verify-repro",
+    "test:preload": "node scripts/verify-preload.mjs"
   },
   "devDependencies": {
-    "@lynx-js/lynxtron": "0.0.28",
-    "@lynx-js/lynx-library-headers": "0.0.28",
+    "@lynx-js/lynx-library-headers": "0.0.30",
+    "@lynx-js/lynxtron": "0.0.30",
     "@lynx-js/react": "0.126.2",
     "@lynx-js/react-rsbuild-plugin": "0.20.3",
     "@lynx-js/rspeedy": "0.18.0"

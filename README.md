@@ -1,8 +1,10 @@
-# Lynxtron native RAF minimal reproduction
+# Lynxtron native RAF and preload async reproductions
 
-macOS-only reproduction for Lynxtron **0.0.28**. Requires macOS 14+, an awake
-attached display, Node.js 22.18+ and Xcode Command Line Tools. It contains no Rust,
-terminal, custom native view, GPU renderer, JS RAF loop or preload bridge.
+macOS-only reproductions for Lynxtron **0.0.30** (the RAF case was originally
+verified on 0.0.28). Requires macOS 14+, an awake attached display, Node.js
+22.18+ and Xcode Command Line Tools. The RAF case contains no Rust, terminal,
+custom native view, GPU renderer, JS RAF loop or preload bridge. A second,
+independent case adds a minimal preload script and Node-API addon.
 
 ```sh
 pnpm install
@@ -55,7 +57,7 @@ it exit after five seconds. Every invocation is a fresh process.
 The Lynx revision above comes from the local Lynxtron checkout's DEPS.lynx;
 it is source-analysis context, not a runtime-reported embedded commit.
 
-## Observed result
+## Native RAF observed result
 
 Verified on 2026-10-04: macOS 27.0.1 (26A434), arm64, Node.js 24.15.0,
 Lynxtron 0.0.28. The display was awake at the start and end of every run, and
@@ -66,8 +68,116 @@ Lynxtron 0.0.28. The display was awake at the start and end of every run, and
 | Windowless | 1 | 0 | 1 |
 | Normal window | 1 | 0 | 1 |
 
+Re-verified on 2026-10-25 with **Lynxtron 0.0.30**, macOS 27.0.1, Node.js
+24.17.0: identical results in both window modes (`pnpm repro` exit 0,
+`pnpm test` exit 1).
+
 The normal regression test (`pnpm test`) expects one callback, so the zero-callback
 baseline above violates its assertion. A later separate `pnpm test` invocation
 was rejected as an invalid experiment because the display had gone to sleep;
 that invocation is not counted as proof of the bug. No screenshots or GPU
 rendering are involved.
+
+## Preload native async crash
+
+This case covers functions exposed from `preload` through
+`contextBridge.exposeInLynxBTS()` and called by the UI through
+`NativeModules.nodejs.exposed`. `native/preload_probe.cc` exposes native
+synchronous, promise and callback functions; `preload/preload.mjs` additionally
+exposes pure-JS promise/callback controls. See
+[preload/README.md](preload/README.md) for the isolated minimal example.
+
+```sh
+pnpm build
+pnpm test:preload
+```
+
+`pnpm test:preload` runs `sync`, `js-promise`, `js-callback`,
+`native-promise` and `native-callback` in both window modes. It uses
+`lynxBridge` only to report observations. It exits 0 when the bug is reproduced
+(JS/native sync and JS async controls pass, native async aborts) or when it is
+fixed (native async resolves normally); it exits 1 for an invalid or
+inconclusive run. Logs are written to `.tmp/preload-*.log`.
+
+Re-verified on 2026-10-25 with **Lynxtron 0.0.30**, macOS 27.0.1, arm64, Node.js
+24.17.0:
+
+| Case | Windowless | Normal window |
+| --- | --- | --- |
+| Native sync (`syncAdd`) | 5 | 5 |
+| JS promise (`jsAsyncAdd`) | 5 | 5 |
+| JS callback (`jsCallbackAdd`) | 5 | 5 |
+| Native promise (`asyncAdd`, TSFN) | abort | abort |
+| Native callback (`callbackAdd`, TSFN) | abort | abort |
+
+The native async runs queue the TSFN successfully, but the JS completion never
+executes:
+
+```text
+[preload-probe] worker queueing tsfn
+[preload-probe] tsfn queue status=0
+  #  Assertion failed: (Environment::GetCurrent(isolate)) == (env)
+...
+lynxtron.app/Contents/MacOS/lynxtron exited with signal SIGABRT
+```
+
+No `tsfn resolve callback entered` or `tsfn callback entered` line appears. The
+stack reaches Node's `InternalCallbackScope` from `ThreadPoolWork::ScheduleWork`
+on the Lynx BTS libuv loop. Lynxtron hosts the preload and Lynx BTS Node
+environments on one isolate/libuv loop; the completion carries the preload
+environment, while `Environment::GetCurrent(isolate)` is the BTS environment.
+The failed attempt is retried (up to three total attempts) by the verifier only
+when the app produces no preload output at all (a display/window-server startup
+issue), never when the assertion was observed.
+
+This is why the Catus Terminal workaround keeps native objects and async
+completions in the Node main process and relays JSON through `lynxBridge.handle`
+/ `NativeModules.bridge.call`; preload only exposes sync functions. See its
+`docs/sftp-async.md` and `src/main/desktop/main.ts` comment. Lynxtron 0.0.30
+already includes [PR #307](https://github.com/lynx-family/lynxtron/pull/307)'s
+`v8::Context::Scope` fix for Node-API async work, but the TSFN completion path
+still aborts; no newer Lynxtron release or `main` commit contains a follow-up
+fix as of 2026-10-25.
+
+## Latest source build verification (2026-10-25)
+
+Built locally outside this repository with:
+
+- Lynxtron `main` at `3aff47a7e775cfaa690a3e1f0855e9b49485cac3`
+- Lynx `develop` at `66b413c982f0d2ae52aa2d476270975436a4538f` plus the
+  Lynxtron Lynx patches (TestBench patch 0006 skipped; replay is
+  Release-disabled)
+- Textra at `aacb462eccc5874822e1fc598653723ef5aa483b`; the revision pinned by
+  latest Lynx (`14a7c14`) lacks the `GetGraphemeBoundary` API required by Clay
+- Node patch `8ace6a7` (PR #307) applied
+- Local app: `/Users/xiexiaofa/lynxtron/out/Release/lynxtron.app`
+
+The verifier's `lynxtron` version field still reports the npm JS API package
+(0.0.30); the `runtime` field points at the locally built app.
+
+| Case | Local latest source |
+| --- | --- |
+| RAF windowless | 0 native callbacks |
+| RAF normal window | 0 native callbacks |
+| RAF diagnostic pump | 1 callback in both modes |
+| The latest Lynx VSync fix | not triggered |
+
+The latest Lynx fix checks `runner_ && !runner_->GetLoop()`. Lynxtron's BTS loop
+is a libuv `MessageLoopNode`, so `GetLoop()` is non-null. The built app logged
+`[vsync-debug] Init ... loop=0x...` and `DisplayLink on current run loop`; it
+never logged the fallback, and both modes still reported zero callbacks. The
+latest Lynx RAF fix therefore does not cover Lynxtron's libuv BTS.
+
+The same build includes Node patch `8ace6a7` (PR #307), yet windowed native
+promise/callback still abort with the same
+`Environment::GetCurrent(isolate) == env` assertion (TSFN queued, JS callback
+not entered). JS sync/promise/callback controls pass. Windowless + preload on
+the local build stalled before any output in repeated attempts, so that mode is
+inconclusive for the local build; the npm 0.0.30 runtime windowless case
+reproduced earlier.
+
+macOS 27 build workarounds: `use_lld=false` and
+`fatal_linker_warnings=false` (Chromium 140's LLD cannot parse the macOS 27 SDK
+TBD stubs), add `build/config/templates/templates.gni` from Lynx buildroot,
+bridge `buildtools/tools_shared/tools_shared`, and install `git-lfs`. The local
+VSync instrumentation in `vsync_monitor_macos.mm` is uncommitted.

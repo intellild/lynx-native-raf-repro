@@ -33,3 +33,19 @@ execFileSync(
   ],
   { stdio: "inherit" },
 );
+// Plain N-API addon used by the preload async-callback reproduction.
+execFileSync(
+  "clang++",
+  [
+    "-std=c++17",
+    "-bundle",
+    "-undefined",
+    "dynamic_lookup",
+    "-I",
+    headers,
+    path.join(root, "native/preload_probe.cc"),
+    "-o",
+    path.join(root, "dist/preload_probe.node"),
+  ],
+  { stdio: "inherit" },
+);
