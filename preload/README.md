@@ -54,7 +54,7 @@ LYNXTRON_EXECUTABLE=/path/to/Lynxtron.app/Contents/MacOS/lynxtron \
 `pnpm test:preload` exits 0 when the bug is reproduced or fixed; inspect
 `PRELOAD_VERDICT` and `.tmp/preload-*.log`.
 
-## Observed on Lynxtron 0.0.30 (macOS 27, arm64)
+## Observed on Lynxtron 0.0.30 (broken)
 
 | Case | Result |
 | --- | --- |
@@ -80,9 +80,27 @@ bridge itself is not the problem; the failure is the native TSFN completion
 crossing into the preload environment while the Lynx BTS environment is
 current.
 
+## Verified fixed in Lynxtron 0.0.31 (2026-10-29)
+
+| Case | Windowless | Normal window |
+| --- | --- | --- |
+| Native sync / JS Promise / JS callback | 5 | 5 |
+| Native Promise (`asyncAdd`, TSFN) | 5 | 5 |
+| Native callback (`callbackAdd`, TSFN) | 5 | 5 |
+
+All 10 cases (5 cases × 2 modes) passed in two consecutive runs, all on attempt
+1. There is no `Environment::GetCurrent(isolate) == env` assertion and no
+SIGABRT:
+
+```json
+{"lynxtron":"0.0.31","allValid":true,"nativeAsyncCrashed":false,
+ "nativeAsyncFixed":true,"reproduced":false,"fixed":true,"assertion":null}
+```
+
 ## Workaround
 
-Keep native objects and async completions in the Node main process and relay
-JSON through `lynxBridge.handle()` / `NativeModules.bridge.call()`; expose only
-synchronous functions from preload. `src/main/desktop/main.ts` in Catus Terminal
-documents the same workaround.
+On 0.0.30, keep native objects and async completions in the Node main process
+and relay JSON through `lynxBridge.handle()` / `NativeModules.bridge.call()`;
+expose only synchronous functions from preload. `src/main/desktop/main.ts` in
+Catus Terminal documents the same workaround. Lynxtron 0.0.31 no longer requires
+this workaround for the pattern above.

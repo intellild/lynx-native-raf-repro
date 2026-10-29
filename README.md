@@ -1,6 +1,6 @@
 # Lynxtron native RAF and preload async reproductions
 
-macOS-only reproductions for Lynxtron **0.0.30** (the RAF case was originally
+macOS-only reproductions for Lynxtron **0.0.31** (the RAF case was originally
 verified on 0.0.28). Requires macOS 14+, an awake attached display, Node.js
 22.18+ and Xcode Command Line Tools. The RAF case contains no Rust, terminal,
 custom native view, GPU renderer, JS RAF loop or preload bridge. A second,
@@ -72,6 +72,11 @@ Re-verified on 2026-10-25 with **Lynxtron 0.0.30**, macOS 27.0.1, Node.js
 24.17.0: identical results in both window modes (`pnpm repro` exit 0,
 `pnpm test` exit 1).
 
+Re-verified on 2026-10-29 with **Lynxtron 0.0.31**: both window modes now
+receive one callback. `pnpm test` exits 0. `pnpm repro` exits 1 only because it
+is a bug-expectation script; native callbacks are 1 in both modes, so the bug no
+longer reproduces.
+
 The normal regression test (`pnpm test`) expects one callback, so the zero-callback
 baseline above violates its assertion. A later separate `pnpm test` invocation
 was rejected as an invalid experiment because the display had gone to sleep;
@@ -110,8 +115,12 @@ Re-verified on 2026-10-25 with **Lynxtron 0.0.30**, macOS 27.0.1, arm64, Node.js
 | Native promise (`asyncAdd`, TSFN) | abort | abort |
 | Native callback (`callbackAdd`, TSFN) | abort | abort |
 
-The native async runs queue the TSFN successfully, but the JS completion never
-executes:
+Re-verified on 2026-10-29 with **Lynxtron 0.0.31**: all cases pass in both
+window modes; native Promise resolves `5` and native callback receives `5`, with
+no assertion or abort. `PRELOAD_VERDICT` reports `"fixed": true`.
+
+The native async runs queue the TSFN successfully, but on 0.0.30 the JS
+completion never executes:
 
 ```text
 [preload-probe] worker queueing tsfn
@@ -136,10 +145,51 @@ completions in the Node main process and relays JSON through `lynxBridge.handle`
 `docs/sftp-async.md` and `src/main/desktop/main.ts` comment. Lynxtron 0.0.30
 already includes [PR #307](https://github.com/lynx-family/lynxtron/pull/307)'s
 `v8::Context::Scope` fix for Node-API async work, but the TSFN completion path
-still aborts; no newer Lynxtron release or `main` commit contains a follow-up
-fix as of 2026-10-25.
+still aborted at that time. Lynxtron 0.0.31 fixed it; see the re-verification
+below.
+
+## Lynxtron 0.0.31 re-verification (2026-10-29)
+
+Upgraded this repository to Lynxtron **0.0.31** (released 2026-10-27) and reran
+both cases on macOS 27.0.1, arm64, Node.js 24.17.0, with the display awake.
+
+### Native RAF
+
+| Window mode | Native requests | Native callbacks |
+| --- | ---: | ---: |
+| Windowless | 1 | 1 |
+| Normal window | 1 | 1 |
+
+All valid runs report `attachedOnBts=true` and the display awake. `pnpm test`
+exits 0. The diagnostic pump is no longer needed for the normal request. The
+`pnpm repro` command exits 1 because it still expects the old zero-callback
+behavior; this is not a failure of the app.
+
+### Preload native async
+
+| Case | Windowless | Normal window |
+| --- | --- | --- |
+| Native sync / JS Promise / JS callback | 5 | 5 |
+| Native Promise (`asyncAdd`, TSFN) | **5** | **5** |
+| Native callback (`callbackAdd`, TSFN) | **5** | **5** |
+
+All 10 cases (5 cases × 2 modes) passed in two consecutive runs, all on attempt
+1. No `Environment::GetCurrent(isolate) == env` assertion, no SIGABRT, and the
+windowless startup issue no longer appeared. The final verdict was:
+
+```json
+{"lynxtron":"0.0.31","allValid":true,"nativeAsyncCrashed":false,
+ "nativeAsyncFixed":true,"reproduced":false,"fixed":true,"assertion":null}
+```
+
+Both Lynxtron issues [#352](https://github.com/lynx-family/lynxtron/issues/352)
+and [#353](https://github.com/lynx-family/lynxtron/issues/353) are fixed by
+0.0.31.
 
 ## Latest source build verification (2026-10-25)
+
+> Historical: this section predates Lynxtron 0.0.31. The released 0.0.31 fixes
+> both bugs; see the re-verification above.
 
 Built locally outside this repository with:
 
