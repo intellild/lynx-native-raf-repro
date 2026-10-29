@@ -12,6 +12,15 @@ pnpm build
 pnpm test
 ```
 
+If the configured npm mirror has not synced the 0.0.31 macOS runtime yet,
+`pnpm install` fails with `Missing
+@lynx-js/lynxtron-runtime-darwin-arm64-devtool@0.0.31`; install from the
+official registry in that case:
+
+```sh
+pnpm install --registry=https://registry.npmjs.org
+```
+
 `pnpm test` opens one windowless and one normal window sequentially. Each process
 registers one native extension, requests **one** frame from `runtime_attach` on
 BTS, observes for five seconds, prints `RAF_RESULT`, then quits. The test expects
